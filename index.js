@@ -2,15 +2,12 @@ const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    Browsers
 } = require("@whiskeysockets/baileys");
-const qrcode = require("qrcode-terminal");
+
 const fs = require("fs");
 
-// ─────────────────────────────────────────────
-//  PERSISTENCIA — comandos.json
-//  Estructura: { ".menu": "texto...", ".pago": "texto..." }
-// ─────────────────────────────────────────────
 const DATA_FILE = "./comandos.json";
 
 function loadComandos() {
@@ -30,9 +27,6 @@ function saveComandos(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// ─────────────────────────────────────────────
-//  HELPER — verificar si es admin del grupo
-// ─────────────────────────────────────────────
 async function isAdmin(sock, groupId, participantJid) {
     try {
         const meta = await sock.groupMetadata(groupId);
@@ -43,26 +37,45 @@ async function isAdmin(sock, groupId, participantJid) {
     }
 }
 
-// ─────────────────────────────────────────────
-//  BOT
-// ─────────────────────────────────────────────
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth");
     const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({ version, auth: state, printQRInTerminal: true });
+    const sock = makeWASocket({
+        version,
+        auth: state,
+        browser: Browsers.ubuntu("Chrome")
+    });
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
-        if (qr) { console.log("📱 Escanea QR:"); qrcode.generate(qr, { small: true }); }
+    sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
         if (connection === "close") {
-            const reconectar = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            const reconectar =
+                lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (reconectar) startBot();
         } else if (connection === "open") {
             console.log("✅ BOT CONECTADO");
         }
     });
+
+    // IMPORTANTE: usa tu número con código de país, sin + ni espacios
+    const phoneNumber = process.env.PHONE_NUMBER;
+
+    if (!sock.authState.creds.registered) {
+        if (!phoneNumber) {
+            console.log("❌ Falta la variable PHONE_NUMBER. Ejemplo: 521234567890");
+        } else {
+            setTimeout(async () => {
+                try {
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    console.log("🔑 CODIGO DE VINCULACION:", code);
+                } catch (err) {
+                    console.log("❌ Error al pedir código de vinculación:", err);
+                }
+            }, 3000);
+        }
+    }
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
@@ -72,7 +85,7 @@ async function startBot() {
         if (msg.key.fromMe) return;
 
         const from = msg.key.remoteJid;
-        if (!from.endsWith("@g.us")) return; // solo grupos
+        if (!from.endsWith("@g.us")) return;
 
         const senderJid = msg.key.participant || msg.participant;
 
@@ -86,36 +99,28 @@ async function startBot() {
 
         const text = rawText.toLowerCase();
 
-        // ══════════════════════════════════════════
-        //  COMANDOS DE ADMINISTRACIÓN (solo admins)
-        // ══════════════════════════════════════════
-
-        // .nuevo .comando Texto completo del mensaje
         if (text.startsWith(".nuevo ")) {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-            // Separar el comando del texto
-            // Formato: .nuevo .micomando Este es el mensaje\nque puede tener saltos
-            const resto = rawText.slice(7).trim(); // quita ".nuevo "
+            const resto = rawText.slice(7).trim();
             const primerEspacio = resto.indexOf(" ");
             if (primerEspacio === -1) {
-                await sock.sendMessage(from, { text: "❌ Uso:\n.nuevo .comando Texto del mensaje\n\nEjemplo:\n.nuevo .promo 🔥 Promoción: 2x1 hoy únicamente" });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.nuevo .comando Texto del mensaje" });
                 return;
             }
             const comando = resto.slice(0, primerEspacio).toLowerCase();
             const mensaje = resto.slice(primerEspacio + 1).trim();
 
             if (!comando.startsWith(".")) {
-                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto.\nEjemplo: .nuevo .promo Texto..." });
+                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto." });
                 return;
             }
 
-            // Proteger comandos del sistema
             const reservados = [".nuevo", ".editar", ".eliminar", ".listar", ".ayuda", ".cerrargrupo", ".abrirgrupo", ".expulsar"];
             if (reservados.includes(comando)) {
-                await sock.sendMessage(from, { text: `⛔ El comando *${comando}* está reservado y no puede usarse.` });
+                await sock.sendMessage(from, { text: `⛔ El comando *${comando}* está reservado.` });
                 return;
             }
 
@@ -127,7 +132,6 @@ async function startBot() {
             return;
         }
 
-        // .editar .comando Nuevo texto completo
         if (text.startsWith(".editar ")) {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -136,14 +140,14 @@ async function startBot() {
             const resto = rawText.slice(8).trim();
             const primerEspacio = resto.indexOf(" ");
             if (primerEspacio === -1) {
-                await sock.sendMessage(from, { text: "❌ Uso:\n.editar .comando Nuevo texto\n\nEjemplo:\n.editar .menu ✨ Menú actualizado ✨" });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.editar .comando Nuevo texto" });
                 return;
             }
             const comando = resto.slice(0, primerEspacio).toLowerCase();
             const mensaje = resto.slice(primerEspacio + 1).trim();
             const comandos = loadComandos();
             if (!comandos[comando]) {
-                await sock.sendMessage(from, { text: `❌ El comando *${comando}* no existe.\nUsa .listar para ver los disponibles.` });
+                await sock.sendMessage(from, { text: `❌ El comando *${comando}* no existe.` });
                 return;
             }
             comandos[comando] = mensaje;
@@ -152,7 +156,6 @@ async function startBot() {
             return;
         }
 
-        // .eliminar .comando
         if (text.startsWith(".eliminar ")) {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -170,7 +173,6 @@ async function startBot() {
             return;
         }
 
-        // .listar — ver todos los comandos activos
         if (text === ".listar") {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -182,7 +184,6 @@ async function startBot() {
             return;
         }
 
-        // .ayuda — instrucciones para admins
         if (text === ".ayuda") {
             if (!await isAdmin(sock, from, senderJid)) return;
             const ayuda = `🛠️ *PANEL DE ADMINISTRADOR*\n\n` +
@@ -191,13 +192,12 @@ async function startBot() {
                 `🗑️ *Eliminar comando*\n.eliminar .comando\n\n` +
                 `📋 *Ver todos los comandos*\n.listar\n\n` +
                 `👥 *Expulsar usuario*\n.expulsar @usuario\n\n` +
-                `🔒 *Cerrar grupo* (solo admins escriben)\n.cerrargrupo\n\n` +
-                `🔓 *Abrir grupo* (todos escriben)\n.abrirgrupo`;
+                `🔒 *Cerrar grupo*\n.cerrargrupo\n\n` +
+                `🔓 *Abrir grupo*\n.abrirgrupo`;
             await sock.sendMessage(from, { text: ayuda });
             return;
         }
 
-        // .expulsar @usuario
         if (text.startsWith(".expulsar")) {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -217,7 +217,6 @@ async function startBot() {
             return;
         }
 
-        // .cerrargrupo
         if (text === ".cerrargrupo") {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -232,7 +231,6 @@ async function startBot() {
             return;
         }
 
-        // .abrirgrupo
         if (text === ".abrirgrupo") {
             if (!await isAdmin(sock, from, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
@@ -247,9 +245,6 @@ async function startBot() {
             return;
         }
 
-        // ══════════════════════════════════════════
-        //  RESPONDER COMANDOS PERSONALIZADOS
-        // ══════════════════════════════════════════
         const comandos = loadComandos();
         if (comandos[text]) {
             await sock.sendMessage(from, { text: comandos[text] });
