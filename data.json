@@ -1,0 +1,30 @@
+{
+  "servicios": [
+    {
+      "nombre": "Netflix",
+      "precio": 80
+    },
+    {
+      "nombre": "Disney+",
+      "precio": 70
+    },
+    {
+      "nombre": "HBO Max",
+      "precio": 60
+    },
+    {
+      "nombre": "Spotify",
+      "precio": 50
+    },
+    {
+      "nombre": "tvplus",
+      "precio": 149
+    }
+  ],
+  "pago": {
+    "banco": "Mercado Pago",
+    "cuenta": "722969010270014866",
+    "titular": "José Alfredo Jiménez Hernández",
+    "concepto": "Dulces 🍭"
+  }
+}
