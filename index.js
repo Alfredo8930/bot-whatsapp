@@ -47,7 +47,11 @@ function phoneToJid(phone) {
 }
 
 function getUserKey(jid) {
-    const numero = normalizePhone(jid);
+    let numero = normalizePhone(jid);
+    // Normalizar números mexicanos: si empieza con 52 y tiene 12 dígitos, agregar el 1
+    if (numero.startsWith("52") && numero.length === 12) {
+        numero = "52" + "1" + numero.slice(2);
+    }
     return `${numero}@s.whatsapp.net`;
 }
 
