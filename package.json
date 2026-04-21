@@ -1,17 +1,18 @@
 {
-  "name": "botwhast",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "qrcode-terminal": "^0.12.0"
-    "mongodb": "^6.0.0"
-  }
+    "name": "botwhast",
+    "version": "1.0.0",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "build": "npm install"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "@whiskeysockets/baileys": "^7.0.0-rc.9",
+        "qrcode-terminal": "^0.12.0",
+        "mongodb": "^6.0.0"
+    }
 }
