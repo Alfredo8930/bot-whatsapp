@@ -674,6 +674,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         const userKey = getUserKey(senderJid);
         console.log("userKey:", userKey);
         const user = await getOrCreateUser(userKey);
+        }
 
         if (text === ".stock") {
             const products = await loadProducts();
