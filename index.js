@@ -671,12 +671,9 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // ==============================
         if (text === ".creditos") {
             const userKey = getUserKey(senderJid);
+            console.log("senderJid:", senderJid);
+            console.log("userKey:", userKey);
             const user = await getOrCreateUser(userKey);
-
-            await sock.sendMessage(from, {
-                text: `💳 *Tus créditos disponibles:* *${user.creditos}*`
-            });
-            return;
         }
 
         if (text === ".stock") {
