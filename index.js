@@ -275,13 +275,7 @@ async function startBot() {
         if (!msg?.message) return;
         if (msg.key.fromMe) return;
 
-        const senderJid = msg.key.participant || msg.participant || from;
-        const realJid = msg.key.participantPhone 
-            ? `${msg.key.participantPhone}@s.whatsapp.net`
-            : (senderJid.includes("@lid") 
-                ? (msg.pushName ? null : senderJid)
-                : senderJid);
-        console.log("msg.key:", JSON.stringify(msg.key));
+        const senderJid = msg.key.participantAlt || msg.key.participant || msg.participant || from;
 
         const rawText = (
             msg.message?.conversation ||
