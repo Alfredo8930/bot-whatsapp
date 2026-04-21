@@ -553,7 +553,8 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const users = loadUsers();
             const jid = phoneToJid(phone);
-            const user = getOrCreateUser(users, jid);
+            const userKey = getUserKey(jid);
+            const user = getOrCreateUser(users, userKey);
 
             user.creditos += amount;
             saveUsers(users);
@@ -563,7 +564,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             });
 
             try {
-                await sock.sendMessage(jid, {
+                await sock.sendMessage(userKey, {
                     text: `💳 *Se te abonaron créditos*\n\nSe agregaron *${amount} créditos* a tu cuenta.\nSaldo actual: *${user.creditos} créditos*`
                 });
             } catch {}
@@ -595,7 +596,8 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const users = loadUsers();
             const jid = phoneToJid(phone);
-            const user = getOrCreateUser(users, jid);
+            const userKey = getUserKey(jid);
+            const user = getOrCreateUser(users, userKey);
 
             user.creditos = Math.max(0, user.creditos - amount);
             saveUsers(users);
