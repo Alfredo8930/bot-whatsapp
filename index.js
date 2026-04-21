@@ -669,13 +669,10 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // CLIENTES
         // ==============================
         if (text === ".creditos") {
-            // Usar senderJid que ya viene del mensaje
-            const userKey = getUserKey(senderJid); 
-            const user = await getOrCreateUser(userKey);
-        
-            // Enviar el saldo actual al usuario
-            await sock.sendMessage(from, { text: `💳 Tus créditos actuales: *${user.creditos}*` });
-        }
+        console.log("senderJid:", senderJid);
+        const userKey = getUserKey(senderJid);
+        console.log("userKey:", userKey);
+        const user = await getOrCreateUser(userKey);
 
         if (text === ".stock") {
             const products = await loadProducts();
