@@ -6,112 +6,34 @@ const {
     Browsers
 } = require("@whiskeysockets/baileys");
 
-const fs = require("fs");
+const { MongoClient } = require("mongodb");
 const path = require("path");
+const fs = require("fs");
 
 // ==============================
-// ARCHIVOS
+// MONGODB
+// ==============================
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://joseaalfredo98_db_user:AS9yuOAQDohpl64M@cluster0.cvmbrsk.mongodb.net/?appName=Cluster0";
+const DB_NAME = "kanestream";
+
+let db;
+
+async function connectDB() {
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log("✅ Conectado a MongoDB");
+}
+
+function col(name) {
+    return db.collection(name);
+}
+
+// ==============================
+// ARCHIVOS AUTH
 // ==============================
 const BASE_PATH = __dirname;
-
-const DATA_FILE = path.join(BASE_PATH, "comandos.json");
-const PRIVATE_FILE = path.join(BASE_PATH, "privados.json");
-const USERS_FILE = path.join(BASE_PATH, "usuarios.json");
-const PRODUCTS_FILE = path.join(BASE_PATH, "productos.json");
-const STOCK_FILE = path.join(BASE_PATH, "stock.json");
-const SALES_FILE = path.join(BASE_PATH, "ventas.json");
 const AUTH_FOLDER = path.join(BASE_PATH, "auth");
-
-// ==============================
-// HELPERS JSON
-// ==============================
-function ensureJsonFile(filePath, defaultData) {
-    if (!fs.existsSync(filePath)) {
-        fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2));
-        return defaultData;
-    }
-    try {
-        return JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    } catch (err) {
-        console.error(`❌ Error leyendo ${filePath}:`, err);
-        return defaultData;
-    }
-}
-
-function saveJsonFile(filePath, data) {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-}
-
-// ==============================
-// PERSISTENCIA
-// ==============================
-function loadComandos() {
-    return ensureJsonFile(DATA_FILE, {
-        ".menu": "✨ *KANE STREAM* ✨\n\n📺 Escribe *.stock* para ver disponibilidad.\n💳 Escribe *.creditos* para ver tu saldo.",
-        ".pago": "✨ *FORMA DE PAGO* ✨\n\n🏦 Banco: Mercado Pago\n🔢 722969010479464673\n👤 Nancy Areli Frias\n📝 Concepto: Dulces 🍭",
-        ".servicios": "📺 *SERVICIOS*\n\n🔥 Netflix\n🔥 Disney+\n🔥 HBO Max\n🔥 Spotify\n\nEscribe *.stock nombre* para ver disponibilidad."
-    });
-}
-
-function saveComandos(data) {
-    saveJsonFile(DATA_FILE, data);
-}
-
-function loadPrivados() {
-    return ensureJsonFile(PRIVATE_FILE, {});
-}
-
-function savePrivados(data) {
-    saveJsonFile(PRIVATE_FILE, data);
-}
-
-function loadUsers() {
-    return ensureJsonFile(USERS_FILE, {});
-}
-
-function saveUsers(data) {
-    saveJsonFile(USERS_FILE, data);
-}
-
-function loadProducts() {
-    return ensureJsonFile(PRODUCTS_FILE, {
-        "netflix": {
-            "perfil": { "precio": 80 },
-            "completa": { "precio": 250 }
-        },
-        "spotify": {
-            "perfil": { "precio": 50 }
-        }
-    });
-}
-
-function saveProducts(data) {
-    saveJsonFile(PRODUCTS_FILE, data);
-}
-
-function loadStock() {
-    return ensureJsonFile(STOCK_FILE, {
-        "netflix": {
-            "perfil": [],
-            "completa": []
-        },
-        "spotify": {
-            "perfil": []
-        }
-    });
-}
-
-function saveStock(data) {
-    saveJsonFile(STOCK_FILE, data);
-}
-
-function loadSales() {
-    return ensureJsonFile(SALES_FILE, []);
-}
-
-function saveSales(data) {
-    saveJsonFile(SALES_FILE, data);
-}
 
 // ==============================
 // HELPERS NEGOCIO
@@ -129,29 +51,136 @@ function getUserKey(jid) {
     return `${numero}@s.whatsapp.net`;
 }
 
-function getOrCreateUser(users, jid) {
-    if (!users[jid]) {
-        users[jid] = {
-            creditos: 0,
-            compras: 0,
-            creado: new Date().toISOString()
-        };
-    }
-    return users[jid];
+function jidToPhone(jid) {
+    return normalizePhone(jid);
 }
 
-function ensureProduct(products, stock, producto, tipo) {
+// ==============================
+// USUARIOS
+// ==============================
+async function getOrCreateUser(jid) {
+    const users = col("usuarios");
+    let user = await users.findOne({ _id: jid });
+    if (!user) {
+        user = { _id: jid, creditos: 0, compras: 0, creado: new Date().toISOString() };
+        await users.insertOne(user);
+    }
+    return user;
+}
+
+async function saveUser(user) {
+    const { _id, ...data } = user;
+    await col("usuarios").updateOne({ _id }, { $set: data }, { upsert: true });
+}
+
+// ==============================
+// COMANDOS
+// ==============================
+const DEFAULT_COMANDOS = {
+    ".menu": "✨ *KANE STREAM* ✨\n\n📺 Escribe *.stock* para ver disponibilidad.\n💳 Escribe *.creditos* para ver tu saldo.",
+    ".pago": "✨ *FORMA DE PAGO* ✨\n\n🏦 Banco: Mercado Pago\n🔢 722969010479464673\n👤 Nancy Areli Frias\n📝 Concepto: Dulces 🍭",
+    ".servicios": "📺 *SERVICIOS*\n\n🔥 Netflix\n🔥 Disney+\n🔥 HBO Max\n🔥 Spotify\n\nEscribe *.stock nombre* para ver disponibilidad."
+};
+
+async function loadComandos() {
+    const docs = await col("comandos").find({}).toArray();
+    if (docs.length === 0) {
+        const entries = Object.entries(DEFAULT_COMANDOS).map(([k, v]) => ({ _id: k, texto: v }));
+        await col("comandos").insertMany(entries);
+        return DEFAULT_COMANDOS;
+    }
+    return Object.fromEntries(docs.map(d => [d._id, d.texto]));
+}
+
+async function saveComando(comando, texto) {
+    await col("comandos").updateOne({ _id: comando }, { $set: { texto } }, { upsert: true });
+}
+
+async function deleteComando(comando) {
+    await col("comandos").deleteOne({ _id: comando });
+}
+
+// ==============================
+// PRIVADOS
+// ==============================
+async function isPrivadoEnviado(jid) {
+    const doc = await col("privados").findOne({ _id: jid });
+    return !!doc;
+}
+
+async function savePrivado(jid) {
+    await col("privados").updateOne(
+        { _id: jid },
+        { $set: { enviado: true, fecha: new Date().toISOString() } },
+        { upsert: true }
+    );
+}
+
+// ==============================
+// PRODUCTOS
+// ==============================
+const DEFAULT_PRODUCTS = {
+    netflix: { perfil: { precio: 80 }, completa: { precio: 250 } },
+    spotify: { perfil: { precio: 50 } }
+};
+
+async function loadProducts() {
+    const docs = await col("productos").find({}).toArray();
+    if (docs.length === 0) {
+        const entries = Object.entries(DEFAULT_PRODUCTS).map(([k, v]) => ({ _id: k, tipos: v }));
+        await col("productos").insertMany(entries);
+        return DEFAULT_PRODUCTS;
+    }
+    return Object.fromEntries(docs.map(d => [d._id, d.tipos]));
+}
+
+async function saveProduct(producto, tipos) {
+    await col("productos").updateOne({ _id: producto }, { $set: { tipos } }, { upsert: true });
+}
+
+// ==============================
+// STOCK
+// ==============================
+async function loadStock() {
+    const docs = await col("stock").find({}).toArray();
+    const result = {};
+    for (const d of docs) result[d._id] = d.tipos;
+    return result;
+}
+
+async function saveStock(producto, tipos) {
+    await col("stock").updateOne({ _id: producto }, { $set: { tipos } }, { upsert: true });
+}
+
+async function ensureProduct(producto, tipo) {
+    const products = await loadProducts();
     if (!products[producto]) products[producto] = {};
     if (!products[producto][tipo]) products[producto][tipo] = { precio: 0 };
+    await saveProduct(producto, products[producto]);
 
+    const stock = await loadStock();
     if (!stock[producto]) stock[producto] = {};
     if (!stock[producto][tipo]) stock[producto][tipo] = [];
+    await saveStock(producto, stock[producto]);
 }
 
+// ==============================
+// VENTAS
+// ==============================
+async function saveSale(sale) {
+    await col("ventas").insertOne({ ...sale, fecha: new Date().toLocaleString("es-MX") });
+}
+
+async function loadSales(limit = 15) {
+    return await col("ventas").find({}).sort({ _id: -1 }).limit(limit).toArray();
+}
+
+// ==============================
+// HELPERS DISPLAY
+// ==============================
 function listStockSummary(products, stock) {
     const nombres = Object.keys(products);
     if (nombres.length === 0) return "📦 No hay productos configurados.";
-
     let out = "📦 *STOCK DISPONIBLE*\n";
     for (const producto of nombres) {
         out += `\n*${producto.toUpperCase()}*\n`;
@@ -165,26 +194,10 @@ function listStockSummary(products, stock) {
     return out.trim();
 }
 
-function productStockDetail(products, stock, producto) {
-    if (!products[producto]) return null;
-
-    let out = `📺 *${producto.toUpperCase()}*\n`;
-    const tipos = Object.keys(products[producto]);
-
-    for (const tipo of tipos) {
-        const precio = products[producto][tipo]?.precio ?? 0;
-        const disponibles = stock[producto]?.[tipo]?.length ?? 0;
-        out += `\n• ${tipo}\n  📦 Disponibles: ${disponibles}\n  💳 Precio: ${precio} créditos\n`;
-    }
-    return out.trim();
-}
-
-function lastSalesText(sales, limit = 10) {
+function lastSalesText(sales) {
     if (!sales.length) return "📄 Aún no hay ventas registradas.";
-
-    const recent = sales.slice(-limit).reverse();
     let out = "📄 *ULTIMAS VENTAS*\n\n";
-    for (const sale of recent) {
+    for (const sale of sales) {
         out += `• ${sale.producto} (${sale.tipo})\n`;
         out += `  Usuario: ${sale.telefono}\n`;
         out += `  Créditos: ${sale.precio}\n`;
@@ -210,6 +223,8 @@ async function isAdmin(sock, groupId, participantJid) {
 // BOT
 // ==============================
 async function startBot() {
+    await connectDB();
+
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
     const { version } = await fetchLatestBaileysVersion();
 
@@ -274,9 +289,8 @@ async function startBot() {
         // PRIVADOS: responder solo una vez
         // ==============================
         if (!from.endsWith("@g.us")) {
-            const privados = loadPrivados();
-
-            if (!privados[from]) {
+            const yaEnviado = await isPrivadoEnviado(from);
+            if (!yaEnviado) {
                 const avisoPrivado = `🤖 *¡Hola! Soy una cuenta bot automática.*
 
 Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedir más información o contratar nuestros servicios directamente con mi amo 👑
@@ -286,12 +300,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 ✨ Mándale mensaje y te atenderá con gusto.`;
 
                 await sock.sendMessage(from, { text: avisoPrivado });
-
-                privados[from] = {
-                    enviado: true,
-                    fecha: new Date().toISOString()
-                };
-                savePrivados(privados);
+                await savePrivado(from);
             }
             return;
         }
@@ -308,9 +317,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             const resto = rawText.slice(7).trim();
             const primerEspacio = resto.indexOf(" ");
             if (primerEspacio === -1) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.nuevo .comando Texto del mensaje"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.nuevo .comando Texto del mensaje" });
                 return;
             }
 
@@ -318,9 +325,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             const mensaje = resto.slice(primerEspacio + 1).trim();
 
             if (!comando.startsWith(".")) {
-                await sock.sendMessage(from, {
-                    text: "❌ El comando debe empezar con punto."
-                });
+                await sock.sendMessage(from, { text: "❌ El comando debe empezar con punto." });
                 return;
             }
 
@@ -333,16 +338,13 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             ];
 
             if (reservados.includes(comando)) {
-                await sock.sendMessage(from, {
-                    text: `⛔ El comando *${comando}* está reservado y no puede usarse.`
-                });
+                await sock.sendMessage(from, { text: `⛔ El comando *${comando}* está reservado y no puede usarse.` });
                 return;
             }
 
-            const comandos = loadComandos();
+            const comandos = await loadComandos();
             const esNuevo = !comandos[comando];
-            comandos[comando] = mensaje;
-            saveComandos(comandos);
+            await saveComando(comando, mensaje);
 
             await sock.sendMessage(from, {
                 text: `${esNuevo ? "✅ Comando creado" : "✏️ Comando actualizado"}: *${comando}*`
@@ -359,29 +361,21 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             const resto = rawText.slice(8).trim();
             const primerEspacio = resto.indexOf(" ");
             if (primerEspacio === -1) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.editar .comando Nuevo texto"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.editar .comando Nuevo texto" });
                 return;
             }
 
             const comando = resto.slice(0, primerEspacio).toLowerCase();
             const mensaje = resto.slice(primerEspacio + 1).trim();
-            const comandos = loadComandos();
+            const comandos = await loadComandos();
 
             if (!comandos[comando]) {
-                await sock.sendMessage(from, {
-                    text: `❌ El comando *${comando}* no existe.`
-                });
+                await sock.sendMessage(from, { text: `❌ El comando *${comando}* no existe.` });
                 return;
             }
 
-            comandos[comando] = mensaje;
-            saveComandos(comandos);
-
-            await sock.sendMessage(from, {
-                text: `✏️ Comando *${comando}* actualizado correctamente.`
-            });
+            await saveComando(comando, mensaje);
+            await sock.sendMessage(from, { text: `✏️ Comando *${comando}* actualizado correctamente.` });
             return;
         }
 
@@ -392,21 +386,15 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             }
 
             const comando = rawText.slice(10).trim().toLowerCase();
-            const comandos = loadComandos();
+            const comandos = await loadComandos();
 
             if (!comandos[comando]) {
-                await sock.sendMessage(from, {
-                    text: `❌ El comando *${comando}* no existe.`
-                });
+                await sock.sendMessage(from, { text: `❌ El comando *${comando}* no existe.` });
                 return;
             }
 
-            delete comandos[comando];
-            saveComandos(comandos);
-
-            await sock.sendMessage(from, {
-                text: `🗑️ Comando *${comando}* eliminado.`
-            });
+            await deleteComando(comando);
+            await sock.sendMessage(from, { text: `🗑️ Comando *${comando}* eliminado.` });
             return;
         }
 
@@ -416,12 +404,9 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const comandos = loadComandos();
+            const comandos = await loadComandos();
             const lista = Object.keys(comandos).join("\n") || "Sin comandos.";
-
-            await sock.sendMessage(from, {
-                text: `📋 *Comandos personalizados activos:*\n\n${lista}`
-            });
+            await sock.sendMessage(from, { text: `📋 *Comandos personalizados activos:*\n\n${lista}` });
             return;
         }
 
@@ -471,9 +456,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!mentionedJid) {
-                await sock.sendMessage(from, {
-                    text: "❌ Etiqueta al usuario:\n.expulsar @usuario"
-                });
+                await sock.sendMessage(from, { text: "❌ Etiqueta al usuario:\n.expulsar @usuario" });
                 return;
             }
 
@@ -481,9 +464,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 await sock.groupParticipantsUpdate(from, [mentionedJid], "remove");
                 await sock.sendMessage(from, { text: "✅ Usuario expulsado." });
             } catch {
-                await sock.sendMessage(from, {
-                    text: "❌ No se pudo expulsar. El bot debe ser administrador."
-                });
+                await sock.sendMessage(from, { text: "❌ No se pudo expulsar. El bot debe ser administrador." });
             }
             return;
         }
@@ -493,16 +474,11 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-
             try {
                 await sock.groupSettingUpdate(from, "announcement");
-                await sock.sendMessage(from, {
-                    text: "🔒 Grupo cerrado. Solo admins pueden escribir."
-                });
+                await sock.sendMessage(from, { text: "🔒 Grupo cerrado. Solo admins pueden escribir." });
             } catch {
-                await sock.sendMessage(from, {
-                    text: "❌ El bot debe ser administrador del grupo."
-                });
+                await sock.sendMessage(from, { text: "❌ El bot debe ser administrador del grupo." });
             }
             return;
         }
@@ -512,16 +488,11 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
-
             try {
                 await sock.groupSettingUpdate(from, "not_announcement");
-                await sock.sendMessage(from, {
-                    text: "🔓 Grupo abierto. Todos pueden escribir."
-                });
+                await sock.sendMessage(from, { text: "🔓 Grupo abierto. Todos pueden escribir." });
             } catch {
-                await sock.sendMessage(from, {
-                    text: "❌ El bot debe ser administrador del grupo."
-                });
+                await sock.sendMessage(from, { text: "❌ El bot debe ser administrador del grupo." });
             }
             return;
         }
@@ -537,9 +508,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const parts = rawText.split(/\s+/);
             if (parts.length < 3) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.addcreditos 5219991112233 100"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.addcreditos 5219991112233 100" });
                 return;
             }
 
@@ -551,13 +520,11 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const users = loadUsers();
-            const jid = phoneToJid(phone);
-            const userKey = getUserKey(jid);
-            const user = getOrCreateUser(users, userKey);
+            const userKey = getUserKey(phoneToJid(phone));
+            const user = await getOrCreateUser(userKey);
 
             user.creditos += amount;
-            saveUsers(users);
+            await saveUser(user);
 
             await sock.sendMessage(from, {
                 text: `✅ Se agregaron *${amount} créditos* a *${phone}*.\nNuevo saldo: *${user.creditos}*`
@@ -580,9 +547,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const parts = rawText.split(/\s+/);
             if (parts.length < 3) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.quitarcreditos 5219991112233 50"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.quitarcreditos 5219991112233 50" });
                 return;
             }
 
@@ -594,13 +559,11 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const users = loadUsers();
-            const jid = phoneToJid(phone);
-            const userKey = getUserKey(jid);
-            const user = getOrCreateUser(users, userKey);
+            const userKey = getUserKey(phoneToJid(phone));
+            const user = await getOrCreateUser(userKey);
 
             user.creditos = Math.max(0, user.creditos - amount);
-            saveUsers(users);
+            await saveUser(user);
 
             await sock.sendMessage(from, {
                 text: `✅ Se descontaron *${amount} créditos* a *${phone}*.\nNuevo saldo: *${user.creditos}*`
@@ -620,9 +583,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const parts = rawText.split(" ");
             if (parts.length < 4) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.stockadd netflix perfil correo@gmail.com:clave123"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.stockadd netflix perfil correo@gmail.com:clave123" });
                 return;
             }
 
@@ -631,20 +592,14 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             const cuenta = parts.slice(3).join(" ").trim();
 
             if (!cuenta.includes(":")) {
-                await sock.sendMessage(from, {
-                    text: "❌ Formato de cuenta inválido.\nUsa: correo@gmail.com:clave"
-                });
+                await sock.sendMessage(from, { text: "❌ Formato de cuenta inválido.\nUsa: correo@gmail.com:clave" });
                 return;
             }
 
-            const products = loadProducts();
-            const stock = loadStock();
-
-            ensureProduct(products, stock, producto, tipo);
+            await ensureProduct(producto, tipo);
+            const stock = await loadStock();
             stock[producto][tipo].push(cuenta);
-
-            saveProducts(products);
-            saveStock(stock);
+            await saveStock(producto, stock[producto]);
 
             await sock.sendMessage(from, {
                 text: `✅ Cuenta agregada a *${producto}* / *${tipo}*.\nDisponibles: *${stock[producto][tipo].length}*`
@@ -660,9 +615,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
             const parts = rawText.split(/\s+/);
             if (parts.length < 4) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.precio netflix perfil 80"
-                });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.precio netflix perfil 80" });
                 return;
             }
 
@@ -675,14 +628,10 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const products = loadProducts();
-            const stock = loadStock();
-
-            ensureProduct(products, stock, producto, tipo);
+            await ensureProduct(producto, tipo);
+            const products = await loadProducts();
             products[producto][tipo].precio = precio;
-
-            saveProducts(products);
-            saveStock(stock);
+            await saveProduct(producto, products[producto]);
 
             await sock.sendMessage(from, {
                 text: `✅ Precio actualizado: *${producto}* / *${tipo}* = *${precio} créditos*`
@@ -696,11 +645,9 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const products = loadProducts();
-            const stock = loadStock();
-            await sock.sendMessage(from, {
-                text: listStockSummary(products, stock)
-            });
+            const products = await loadProducts();
+            const stock = await loadStock();
+            await sock.sendMessage(from, { text: listStockSummary(products, stock) });
             return;
         }
 
@@ -710,10 +657,8 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 return;
             }
 
-            const sales = loadSales();
-            await sock.sendMessage(from, {
-                text: lastSalesText(sales, 15)
-            });
+            const sales = await loadSales(15);
+            await sock.sendMessage(from, { text: lastSalesText(sales) });
             return;
         }
 
@@ -721,11 +666,9 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // CLIENTES
         // ==============================
         if (text === ".creditos") {
-            const users = loadUsers();
             const userKey = getUserKey(senderJid);
-            const user = getOrCreateUser(users, userKey);
-            saveUsers(users);
-        
+            const user = await getOrCreateUser(userKey);
+
             await sock.sendMessage(from, {
                 text: `💳 *Tus créditos disponibles:* *${user.creditos}*`
             });
@@ -733,79 +676,65 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".stock") {
-            const products = loadProducts();
-            const stock = loadStock();
-
-            await sock.sendMessage(from, {
-                text: listStockSummary(products, stock)
-            });
+            const products = await loadProducts();
+            const stock = await loadStock();
+            await sock.sendMessage(from, { text: listStockSummary(products, stock) });
             return;
         }
 
-if (text.startsWith(".comprar ")) {
-    const parts = rawText.split(/\s+/);
-    if (parts.length < 3) {
-        await sock.sendMessage(from, {
-            text: "❌ Uso:\n.comprar netflix perfil"
-        });
-        return;
-    }
+        if (text.startsWith(".comprar ")) {
+            const parts = rawText.split(/\s+/);
+            if (parts.length < 3) {
+                await sock.sendMessage(from, { text: "❌ Uso:\n.comprar netflix perfil" });
+                return;
+            }
 
-    const producto = parts[1].toLowerCase();
-    const tipo = parts[2].toLowerCase();
+            const producto = parts[1].toLowerCase();
+            const tipo = parts[2].toLowerCase();
 
-    const users = loadUsers();
-    const products = loadProducts();
-    const stock = loadStock();
-    const sales = loadSales();
+            const products = await loadProducts();
+            const stock = await loadStock();
 
-    if (!products[producto] || !products[producto][tipo]) {
-        await sock.sendMessage(from, {
-            text: "❌ Ese producto o tipo no existe."
-        });
-        return;
-    }
+            if (!products[producto] || !products[producto][tipo]) {
+                await sock.sendMessage(from, { text: "❌ Ese producto o tipo no existe." });
+                return;
+            }
 
-    const disponibles = stock[producto]?.[tipo]?.length ?? 0;
-    if (disponibles <= 0) {
-        await sock.sendMessage(from, {
-            text: `❌ No hay stock disponible de *${producto}* / *${tipo}*.`
-        });
-        return;
-    }
+            const disponibles = stock[producto]?.[tipo]?.length ?? 0;
+            if (disponibles <= 0) {
+                await sock.sendMessage(from, {
+                    text: `❌ No hay stock disponible de *${producto}* / *${tipo}*.`
+                });
+                return;
+            }
 
-    const precio = Number(products[producto][tipo].precio ?? 0);
-    const userKey = getUserKey(senderJid);
-    const user = getOrCreateUser(users, userKey);
+            const precio = Number(products[producto][tipo].precio ?? 0);
+            const userKey = getUserKey(senderJid);
+            const user = await getOrCreateUser(userKey);
 
-    if (user.creditos < precio) {
-        await sock.sendMessage(from, {
-            text: `❌ No tienes créditos suficientes.\n💳 Precio: *${precio}*\n💰 Tu saldo: *${user.creditos}*`
-        });
-        return;
-    }
+            if (user.creditos < precio) {
+                await sock.sendMessage(from, {
+                    text: `❌ No tienes créditos suficientes.\n💳 Precio: *${precio}*\n💰 Tu saldo: *${user.creditos}*`
+                });
+                return;
+            }
 
-    const cuenta = stock[producto][tipo].shift();
-    user.creditos -= precio;
-    user.compras += 1;
+            const cuenta = stock[producto][tipo].shift();
+            user.creditos -= precio;
+            user.compras += 1;
 
-    const telefono = jidToPhone(userKey);
+            await saveUser(user);
+            await saveStock(producto, stock[producto]);
+            await saveSale({
+                usuario: userKey,
+                telefono: jidToPhone(userKey),
+                producto,
+                tipo,
+                precio,
+                cuenta
+            });
 
-    sales.push({
-        usuario: userKey,
-        telefono,
-        producto,
-        tipo,
-        precio,
-        cuenta,
-        fecha: new Date().toLocaleString("es-MX")
-    });
-
-    saveUsers(users);
-    saveStock(stock);
-    saveSales(sales);
-
-    const entregaPrivada = `✅ *Compra realizada con éxito*
+            const entregaPrivada = `✅ *Compra realizada con éxito*
 
 📦 Servicio: *${producto}*
 📌 Tipo: *${tipo}*
@@ -817,26 +746,25 @@ ${cuenta}
 ⚠️ No modifiques los datos de la cuenta.
 Gracias por tu compra.`;
 
-    try {
-        await sock.sendMessage(userKey, { text: entregaPrivada });
+            try {
+                await sock.sendMessage(userKey, { text: entregaPrivada });
+                await sock.sendMessage(from, {
+                    text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
+                });
+            } catch (err) {
+                await sock.sendMessage(from, {
+                    text: "⚠️ Compra procesada, pero no pude enviarte el mensaje privado. Escribe al admin."
+                });
+                console.error("❌ Error enviando privado:", err);
+            }
 
-        await sock.sendMessage(from, {
-            text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
-        });
-    } catch (err) {
-        await sock.sendMessage(from, {
-            text: "⚠️ Compra procesada, pero no pude enviarte el mensaje privado. Escribe al admin."
-        });
-        console.error("❌ Error enviando privado:", err);
-    }
-
-    return;
-}
+            return;
+        }
 
         // ==============================
         // COMANDOS PERSONALIZADOS
         // ==============================
-        const comandos = loadComandos();
+        const comandos = await loadComandos();
         if (comandos[text]) {
             await sock.sendMessage(from, { text: comandos[text] });
         }
