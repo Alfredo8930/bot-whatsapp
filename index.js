@@ -277,6 +277,9 @@ async function startBot() {
 
         const from = msg.key.remoteJid;
         const senderJid = msg.key.participant || msg.participant || from;
+        const senderPhone = msg.key.participantPhone || 
+            msg.message?.extendedTextMessage?.contextInfo?.participant ||
+            senderJid;
 
         const rawText = (
             msg.message?.conversation ||
@@ -670,7 +673,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // CLIENTES
         // ==============================
         if (text === ".creditos") {
-            const userKey = getUserKey(senderJid);
+            const userKey = getUserKey(senderPhone);
             console.log("senderJid:", senderJid);
             console.log("userKey:", userKey);
             const user = await getOrCreateUser(userKey);
