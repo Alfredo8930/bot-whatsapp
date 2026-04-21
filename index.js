@@ -275,6 +275,7 @@ async function startBot() {
         if (!msg?.message) return;
         if (msg.key.fromMe) return;
 
+        const from = msg.key.remoteJid;
         const senderJid = msg.key.participantAlt || msg.key.participant || msg.participant || from;
 
         const rawText = (
