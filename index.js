@@ -124,8 +124,9 @@ function phoneToJid(phone) {
     return `${normalizePhone(phone)}@s.whatsapp.net`;
 }
 
-function jidToPhone(jid) {
-    return jid.split("@")[0];
+function getUserKey(jid) {
+    const numero = normalizePhone(jid);
+    return `${numero}@s.whatsapp.net`;
 }
 
 function getOrCreateUser(users, jid) {
@@ -719,9 +720,10 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // ==============================
         if (text === ".creditos") {
             const users = loadUsers();
-            const user = getOrCreateUser(users, senderJid);
+            const userKey = getUserKey(senderJid);
+            const user = getOrCreateUser(users, userKey);
             saveUsers(users);
-
+        
             await sock.sendMessage(from, {
                 text: `💳 *Tus créditos disponibles:* *${user.creditos}*`
             });
@@ -738,95 +740,70 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             return;
         }
 
-        if (text.startsWith(".stock ")) {
-            const parts = rawText.split(/\s+/);
-            const producto = parts[1]?.toLowerCase();
+if (text.startsWith(".comprar ")) {
+    const parts = rawText.split(/\s+/);
+    if (parts.length < 3) {
+        await sock.sendMessage(from, {
+            text: "❌ Uso:\n.comprar netflix perfil"
+        });
+        return;
+    }
 
-            if (!producto) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.stock netflix"
-                });
-                return;
-            }
+    const producto = parts[1].toLowerCase();
+    const tipo = parts[2].toLowerCase();
 
-            const products = loadProducts();
-            const stock = loadStock();
-            const detail = productStockDetail(products, stock, producto);
+    const users = loadUsers();
+    const products = loadProducts();
+    const stock = loadStock();
+    const sales = loadSales();
 
-            if (!detail) {
-                await sock.sendMessage(from, {
-                    text: `❌ No existe el producto *${producto}*.`
-                });
-                return;
-            }
+    if (!products[producto] || !products[producto][tipo]) {
+        await sock.sendMessage(from, {
+            text: "❌ Ese producto o tipo no existe."
+        });
+        return;
+    }
 
-            await sock.sendMessage(from, { text: detail });
-            return;
-        }
+    const disponibles = stock[producto]?.[tipo]?.length ?? 0;
+    if (disponibles <= 0) {
+        await sock.sendMessage(from, {
+            text: `❌ No hay stock disponible de *${producto}* / *${tipo}*.`
+        });
+        return;
+    }
 
-        if (text.startsWith(".comprar ")) {
-            const parts = rawText.split(/\s+/);
-            if (parts.length < 3) {
-                await sock.sendMessage(from, {
-                    text: "❌ Uso:\n.comprar netflix perfil"
-                });
-                return;
-            }
+    const precio = Number(products[producto][tipo].precio ?? 0);
+    const userKey = getUserKey(senderJid);
+    const user = getOrCreateUser(users, userKey);
 
-            const producto = parts[1].toLowerCase();
-            const tipo = parts[2].toLowerCase();
+    if (user.creditos < precio) {
+        await sock.sendMessage(from, {
+            text: `❌ No tienes créditos suficientes.\n💳 Precio: *${precio}*\n💰 Tu saldo: *${user.creditos}*`
+        });
+        return;
+    }
 
-            const users = loadUsers();
-            const products = loadProducts();
-            const stock = loadStock();
-            const sales = loadSales();
+    const cuenta = stock[producto][tipo].shift();
+    user.creditos -= precio;
+    user.compras += 1;
 
-            if (!products[producto] || !products[producto][tipo]) {
-                await sock.sendMessage(from, {
-                    text: "❌ Ese producto o tipo no existe."
-                });
-                return;
-            }
+    const telefono = jidToPhone(userKey);
 
-            const disponibles = stock[producto]?.[tipo]?.length ?? 0;
-            if (disponibles <= 0) {
-                await sock.sendMessage(from, {
-                    text: `❌ No hay stock disponible de *${producto}* / *${tipo}*.`
-                });
-                return;
-            }
+    sales.push({
+        usuario: userKey,
+        telefono,
+        producto,
+        tipo,
+        precio,
+        cuenta,
+        fecha: new Date().toLocaleString("es-MX")
+    });
 
-            const precio = Number(products[producto][tipo].precio ?? 0);
-            const user = getOrCreateUser(users, senderJid);
+    saveUsers(users);
+    saveStock(stock);
+    saveSales(sales);
 
-            if (user.creditos < precio) {
-                await sock.sendMessage(from, {
-                    text: `❌ No tienes créditos suficientes.\n💳 Precio: *${precio}*\n💰 Tu saldo: *${user.creditos}*`
-                });
-                return;
-            }
-
-            const cuenta = stock[producto][tipo].shift();
-            user.creditos -= precio;
-            user.compras += 1;
-
-            const telefono = jidToPhone(senderJid);
-
-            sales.push({
-                usuario: senderJid,
-                telefono,
-                producto,
-                tipo,
-                precio,
-                cuenta,
-                fecha: new Date().toLocaleString("es-MX")
-            });
-
-            saveUsers(users);
-            saveStock(stock);
-            saveSales(sales);
-
-            const entregaPrivada = `✅ *Compra realizada con éxito*
+    const entregaPrivada = `✅ *Compra realizada con éxito*
 
 📦 Servicio: *${producto}*
 📌 Tipo: *${tipo}*
@@ -838,23 +815,21 @@ ${cuenta}
 ⚠️ No modifiques los datos de la cuenta.
 Gracias por tu compra.`;
 
-            try {
-                await sock.sendMessage(senderJid, { text: entregaPrivada });
+    try {
+        await sock.sendMessage(userKey, { text: entregaPrivada });
 
-                await sock.sendMessage(from, {
-                    text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
-                });
-            } catch (err) {
-                // Si falla el privado, no devolvemos stock/créditos en esta v1.
-                // Solo avisamos para que el admin lo revise.
-                await sock.sendMessage(from, {
-                    text: "⚠️ Compra procesada, pero no pude enviarte el mensaje privado. Escribe al admin."
-                });
-                console.error("❌ Error enviando privado:", err);
-            }
+        await sock.sendMessage(from, {
+            text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
+        });
+    } catch (err) {
+        await sock.sendMessage(from, {
+            text: "⚠️ Compra procesada, pero no pude enviarte el mensaje privado. Escribe al admin."
+        });
+        console.error("❌ Error enviando privado:", err);
+    }
 
-            return;
-        }
+    return;
+}
 
         // ==============================
         // COMANDOS PERSONALIZADOS
