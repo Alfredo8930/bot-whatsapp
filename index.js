@@ -275,11 +275,13 @@ async function startBot() {
         if (!msg?.message) return;
         if (msg.key.fromMe) return;
 
-        const from = msg.key.remoteJid;
         const senderJid = msg.key.participant || msg.participant || from;
-        const senderPhone = msg.key.participantPhone || 
-            msg.message?.extendedTextMessage?.contextInfo?.participant ||
-            senderJid;
+        const realJid = msg.key.participantPhone 
+            ? `${msg.key.participantPhone}@s.whatsapp.net`
+            : (senderJid.includes("@lid") 
+                ? (msg.pushName ? null : senderJid)
+                : senderJid);
+        console.log("msg.key:", JSON.stringify(msg.key));
 
         const rawText = (
             msg.message?.conversation ||
