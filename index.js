@@ -216,6 +216,8 @@ function lastSalesText(sales) {
 async function isAdmin(sock, groupId, participantJid) {
     try {
         const meta = await sock.groupMetadata(groupId);
+        console.log("participantJid:", participantJid);
+        console.log("participantes:", JSON.stringify(meta.participants.map(x => ({id: x.id, admin: x.admin}))));
         const p = meta.participants.find(x => 
             x.id === participantJid || 
             x.lidJid === participantJid ||
