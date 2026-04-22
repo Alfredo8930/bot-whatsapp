@@ -216,7 +216,11 @@ function lastSalesText(sales) {
 async function isAdmin(sock, groupId, participantJid) {
     try {
         const meta = await sock.groupMetadata(groupId);
-        const p = meta.participants.find(x => x.id === participantJid);
+        const p = meta.participants.find(x => 
+            x.id === participantJid || 
+            x.lidJid === participantJid ||
+            getUserKey(x.id) === getUserKey(participantJid)
+        );
         return p?.admin === "admin" || p?.admin === "superadmin";
     } catch {
         return false;
