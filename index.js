@@ -8,7 +8,6 @@ const {
 
 const { MongoClient } = require("mongodb");
 const path = require("path");
-const fs = require("fs");
 
 // ==============================
 // MONGODB
@@ -213,15 +212,13 @@ function lastSalesText(sales) {
 // ==============================
 // ADMIN CHECK
 // ==============================
-async function isAdmin(sock, groupId, participantJid) {
+async function isAdmin(sock, groupId, lidJid, senderJid) {
     try {
         const meta = await sock.groupMetadata(groupId);
-        console.log("participantJid:", participantJid);
-        console.log("participantes:", JSON.stringify(meta.participants.map(x => ({id: x.id, admin: x.admin}))));
-        const p = meta.participants.find(x => 
-            x.id === participantJid || 
-            x.lidJid === participantJid ||
-            getUserKey(x.id) === getUserKey(participantJid)
+        const p = meta.participants.find(x =>
+            x.id === lidJid ||
+            x.id === senderJid ||
+            getUserKey(x.id) === getUserKey(senderJid)
         );
         return p?.admin === "admin" || p?.admin === "superadmin";
     } catch {
@@ -282,7 +279,10 @@ async function startBot() {
         if (msg.key.fromMe) return;
 
         const from = msg.key.remoteJid;
-        const senderJid = msg.key.participantAlt || msg.key.participant || msg.participant || from;
+        // lidJid: el ID interno de WhatsApp (@lid)
+        const lidJid = msg.key.participant || msg.participant || from;
+        // senderJid: el número real (@s.whatsapp.net), si existe
+        const senderJid = msg.key.participantAlt || lidJid;
 
         const rawText = (
             msg.message?.conversation ||
@@ -319,7 +319,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // PANEL ADMIN
         // ==============================
         if (text.startsWith(".nuevo ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -363,7 +363,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text.startsWith(".editar ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -390,7 +390,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text.startsWith(".eliminar ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -409,7 +409,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".listar") {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -421,7 +421,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".ayuda") {
-            if (!await isAdmin(sock, from, senderJid)) return;
+            if (!await isAdmin(sock, from, lidJid, senderJid)) return;
 
             const ayuda = `🛠️ *PANEL DE ADMINISTRADOR*
 
@@ -450,7 +450,6 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 
 *Clientes*
 .stock
-.stock netflix
 .creditos
 .comprar netflix perfil`;
 
@@ -459,7 +458,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text.startsWith(".expulsar")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -480,7 +479,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".cerrargrupo") {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -494,7 +493,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".abrirgrupo") {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -511,7 +510,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // ADMIN: CREDITOS
         // ==============================
         if (text.startsWith(".addcreditos ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -550,7 +549,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text.startsWith(".quitarcreditos ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -586,7 +585,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // ADMIN: STOCK Y PRECIOS
         // ==============================
         if (text.startsWith(".stockadd ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -618,7 +617,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text.startsWith(".precio ")) {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -650,7 +649,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".stockver") {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -662,7 +661,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         if (text === ".ventas") {
-            if (!await isAdmin(sock, from, senderJid)) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
                 await sock.sendMessage(from, { text: "⛔ Solo administradores." });
                 return;
             }
@@ -676,10 +675,13 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         // CLIENTES
         // ==============================
         if (text === ".creditos") {
-        console.log("senderJid:", senderJid);
-        const userKey = getUserKey(senderJid);
-        console.log("userKey:", userKey);
-        const user = await getOrCreateUser(userKey);
+            const userKey = getUserKey(senderJid);
+            const user = await getOrCreateUser(userKey);
+
+            await sock.sendMessage(from, {
+                text: `💳 *Tus créditos disponibles:* *${user.creditos}*`
+            });
+            return;
         }
 
         if (text === ".stock") {
