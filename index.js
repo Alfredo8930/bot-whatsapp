@@ -756,6 +756,7 @@ ${cuenta}
 Gracias por tu compra.`;
 
             try {
+                console.log("Enviando privado a:", userKey);
                 await sock.sendMessage(userKey, { text: entregaPrivada });
                 await sock.sendMessage(from, {
                     text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
