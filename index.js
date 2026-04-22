@@ -757,7 +757,12 @@ Gracias por tu compra.`;
 
             try {
                 console.log("Enviando privado a:", userKey);
-                await sock.sendMessage(userKey, { text: entregaPrivada });
+                await sock.sendMessage(userKey, { text: entregaPrivada }).catch(() => {});
+                // Intentar también sin el 1 por si acaso
+                const userKeySin1 = userKey.replace("521", "52");
+                if (userKeySin1 !== userKey) {
+                    await sock.sendMessage(userKeySin1, { text: entregaPrivada }).catch(() => {});
+                }
                 await sock.sendMessage(from, {
                     text: `✅ *Compra realizada correctamente*\n\n📦 ${producto} / ${tipo}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.`
                 });
