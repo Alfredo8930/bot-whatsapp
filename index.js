@@ -743,22 +743,49 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
                 cuenta
             });
 
-            const entregaPrivada = `✅ *Compra realizada con éxito*
+            // Parsear cuenta: correo:contraseña:perfil o correo:contraseña
+            const partesCuenta = cuenta.split(":");
+            const correo = partesCuenta[0] || "";
+            const contrasena = partesCuenta[1] || "";
+            const perfil = partesCuenta[2] || "";
+            const fecha = new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
 
-📦 Servicio: *${producto}*
-📌 Tipo: *${tipo}*
-💳 Créditos descontados: *${precio}*
+            const emojisServicio = {
+                netflix: "📺", spotify: "🎵", hbo: "🎬", disney: "🏰",
+                paramount: "⭐", amazon: "📦", apple: "🍎", youtube: "▶️"
+            };
+            const emoji = emojisServicio[producto.toLowerCase()] || "📦";
 
-🔐 *Tus accesos:*
-${cuenta}
+            let instrucciones = "";
+            if (tipo === "perfil") {
+                instrucciones = `*INSTRUCCIONES* ‼️
 
-⚠️ No modifiques los datos de la cuenta.
-Gracias por tu compra.`;
+🌙•El servicio solo es para *1 SOLO DISPOSITIVO*, respetar los dispositivos, de no ser así se retirará el servicio.
+⭐*NO* cambiar datos, contraseña o correo, pierde garantía a la brevedad.
+🌙•No mover absolutamente nada de la suscripción.
+⭐•*Solo un dispositivo por perfil adquirido* de lo contrario perderá el servicio.
+🌙
+⭐✨ • *NO* modificar el nombre del perfil, al cambiarlo pierde garantía.
+⭐*Fallas y Reposiciones de 1 a 4 días*, ten paciencia que tenemos muchos clientes 🌙
+
+⭐*Gracias por tu compra*⭐`;
+            } else {
+                instrucciones = `*Obs:* Es importante recordar que toda cuenta alquilada queda bajo *SU RESPONSABILIDAD*. Usted será el único propietario de la cuenta, ya que cada mes se cambia el dominio para evitar robos. En caso de que alguna de las cuentas alquiladas sea robada por uno de sus clientes se perderá garantía y se cobrará multa por la cuenta.
+
+Eviten entregar la página de códigos y proporcione el código usted.`;
+            }
+
+            const entregaPrivada = `${emoji} *${producto.toUpperCase()}* ${emoji}
+${correo}
+🔒 ${contrasena}${perfil ? `\n👤 ${perfil}` : ""}
+
+📅 *Fecha de compra:* ${fecha}
+
+${instrucciones}`;
 
             try {
                 console.log("Enviando privado a:", userKey);
                 await sock.sendMessage(userKey, { text: entregaPrivada }).catch(() => {});
-                // Intentar también sin el 1 por si acaso
                 const userKeySin1 = userKey.replace("521", "52");
                 if (userKeySin1 !== userKey) {
                     await sock.sendMessage(userKeySin1, { text: entregaPrivada }).catch(() => {});
