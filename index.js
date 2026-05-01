@@ -441,9 +441,11 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 .quitarcreditos 5219991112233 50
 
 *Stock*
-.stockadd netflix perfil correo@gmail.com:clave
-.stockver
+.stockadd netflix perfil correo@gmail.com:clave:p1
+.stockadd netflix completa correo@gmail.com:clave
+.stockdel netflix perfil
 .precio netflix perfil 80
+.stockver
 
 *Ventas*
 .ventas
