@@ -18,7 +18,10 @@ const DB_NAME = "kanestream";
 let db;
 
 async function connectDB() {
-    const client = new MongoClient(MONGO_URI);
+    const client = new MongoClient(MONGO_URI, {
+    tls: true,
+    tlsAllowInvalidCertificates: true
+});
     await client.connect();
     db = client.db(DB_NAME);
     console.log("✅ Conectado a MongoDB");
