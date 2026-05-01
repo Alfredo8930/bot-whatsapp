@@ -18,10 +18,7 @@ const DB_NAME = "kanestream";
 let db;
 
 async function connectDB() {
-    const client = new MongoClient(MONGO_URI, {
-    tls: true,
-    tlsAllowInvalidCertificates: true
-});
+    const client = new MongoClient(MONGO_URI);
     await client.connect();
     db = client.db(DB_NAME);
     console.log("✅ Conectado a MongoDB");
@@ -444,8 +441,7 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
 .quitarcreditos 5219991112233 50
 
 *Stock*
-.stockadd netflix perfil correo@gmail.com:clave:p1
-.stockadd netflix completa correo@gmail.com:clave
+.stockadd netflix perfil correo@gmail.com:clave
 .stockver
 .precio netflix perfil 80
 
@@ -661,6 +657,40 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             const products = await loadProducts();
             const stock = await loadStock();
             await sock.sendMessage(from, { text: listStockSummary(products, stock) });
+            return;
+        }
+
+        if (text.startsWith(".stockdel ")) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+
+            const parts = rawText.split(/\s+/);
+            if (parts.length < 3) {
+                await sock.sendMessage(from, { text: "❌ Uso:\n.stockdel netflix perfil" });
+                return;
+            }
+
+            const producto = parts[1].toLowerCase();
+            const tipo = parts[2].toLowerCase();
+            const stock = await loadStock();
+            const products = await loadProducts();
+
+            if (!stock[producto] || stock[producto][tipo] === undefined) {
+                await sock.sendMessage(from, { text: "❌ No existe stock de *" + producto + "* / *" + tipo + "*." });
+                return;
+            }
+
+            delete stock[producto][tipo];
+            await saveStock(producto, stock[producto]);
+
+            if (products[producto] && products[producto][tipo]) {
+                delete products[producto][tipo];
+                await saveProduct(producto, products[producto]);
+            }
+
+            await sock.sendMessage(from, { text: "🗑️ Se eliminó *" + tipo + "* de *" + producto + "* correctamente." });
             return;
         }
 
