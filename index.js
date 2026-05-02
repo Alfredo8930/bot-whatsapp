@@ -178,6 +178,49 @@ async function loadSales(limit = 15) {
     return await col("ventas").find({}).sort({ _id: -1 }).limit(limit).toArray();
 }
 
+
+// ==============================
+// COMBOS
+// ==============================
+async function loadCombos() {
+    const docs = await col("combos").find({}).toArray();
+    return Object.fromEntries(docs.map(d => [d._id, d]));
+}
+
+async function saveCombo(nombre, plataformas, precio) {
+    await col("combos").updateOne({ _id: nombre }, { $set: { plataformas, precio } }, { upsert: true });
+}
+
+async function deleteCombo(nombre) {
+    await col("combos").deleteOne({ _id: nombre });
+}
+
+function getEmoji(nombre) {
+    const map = {
+        netflix: "📺", spotify: "🎵", hbo: "🎬", disney: "🏰",
+        paramount: "⭐", amazon: "📦", apple: "🍎", youtube: "▶️",
+        vix: "🎥", crunchyroll: "🍥", prime: "📦", tvplus: "📡",
+        appletv: "🍎", peacock: "🦚", deezer: "🎶", tidal: "🎵"
+    };
+    return map[nombre.toLowerCase()] || "📦";
+}
+
+function listCombosText(combos, stock) {
+    const nombres = Object.keys(combos);
+    if (nombres.length === 0) return "🎁 No hay combos disponibles por el momento.";
+    let out = "🎁 *COMBOS DISPONIBLES*\n\n";
+    for (const nombre of nombres) {
+        const combo = combos[nombre];
+        const disponible = combo.plataformas.every(p => (stock[p]?.perfil?.length ?? 0) > 0);
+        out += `🎯 *${nombre.toUpperCase()}*\n`;
+        out += `📦 Incluye: ${combo.plataformas.map(p => `${getEmoji(p)} ${p}`).join(" + ")}\n`;
+        out += `💰 Precio: *${combo.precio} créditos*\n`;
+        out += `${disponible ? "✅ Disponible" : "❌ Sin stock"}\n\n`;
+    }
+    out += "_Escribe *.comprar nombrecombo* para adquirir_ 🛒";
+    return out.trim();
+}
+
 // ==============================
 // HELPERS DISPLAY
 // ==============================
@@ -423,37 +466,48 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         if (text === ".ayuda") {
             if (!await isAdmin(sock, from, lidJid, senderJid)) return;
 
-            const ayuda = `🛠️ *PANEL DE ADMINISTRADOR*
+            const ayuda = `⭐────────────────────⭐
+      🛠️ *PANEL DE ADMINISTRADOR* 🛠️
+⭐────────────────────⭐
 
-*Comandos base*
-.nuevo .comando Texto
-.editar .comando Nuevo texto
-.eliminar .comando
-.listar
+――― 📝 *COMANDOS PERSONALIZADOS* ―――
+▸ *.nuevo* .cmd Texto del mensaje
+▸ *.editar* .cmd Nuevo texto
+▸ *.eliminar* .cmd
+▸ *.listar* → Ver todos los comandos
 
-*Moderación*
-.expulsar @usuario
-.cerrargrupo
-.abrirgrupo
+――――― 👥 *MODERACIÓN* ―――――
+▸ *.expulsar* @usuario
+▸ *.cerrargrupo* → Solo admins escriben
+▸ *.abrirgrupo* → Todos pueden escribir
 
-*Créditos*
-.addcreditos 5219991112233 100
-.quitarcreditos 5219991112233 50
+――――― 💳 *CRÉDITOS* ―――――
+▸ *.addcreditos* 5219991112233 100
+▸ *.quitarcreditos* 5219991112233 50
 
-*Stock*
-.stockadd netflix perfil correo@gmail.com:clave:p1
-.stockadd netflix completa correo@gmail.com:clave
-.stockdel netflix perfil
-.precio netflix perfil 80
-.stockver
+――― 📦 *STOCK INDIVIDUAL* ―――
+▸ *.stockadd* netflix perfil correo:clave:p1
+▸ *.stockadd* netflix completa correo:clave
+▸ *.stockver* → Ver stock actual
+▸ *.stockdel* netflix perfil → Eliminar tipo
+▸ *.precio* netflix perfil 80
 
-*Ventas*
-.ventas
+――――― 🎁 *COMBOS* ―――――
+▸ *.comboadd* quesogratis Prime|Paramount|Vix 24
+▸ *.combodel* quesogratis → Eliminar combo
+▸ *.combosver* → Ver combos (solo admin)
 
-*Clientes*
-.stock
-.creditos
-.comprar netflix perfil`;
+――――― 📊 *VENTAS* ―――――
+▸ *.ventas* → Ver últimas 15 ventas
+
+――― 🛒 *COMANDOS CLIENTES* ―――
+▸ *.stock* → Ver servicios disponibles
+▸ *.combos* → Ver combos disponibles
+▸ *.creditos* → Ver saldo actual
+▸ *.comprar* netflix perfil
+▸ *.comprar* quesogratis
+
+⭐────────────────────⭐`
 
             await sock.sendMessage(from, { text: ayuda });
             return;
@@ -708,6 +762,62 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
         }
 
         // ==============================
+        // COMBOS ADMIN
+        // ==============================
+        if (text.startsWith(".comboadd ")) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const parts = rawText.split(/\s+/);
+            if (parts.length < 4) {
+                await sock.sendMessage(from, { text: "❌ Uso:\n.comboadd quesogratis Prime|Paramount|Vix 24" });
+                return;
+            }
+            const nombre = parts[1].toLowerCase();
+            const plataformas = parts[2].split("|").map(p => p.toLowerCase());
+            const precio = Number(parts[3]);
+            if (Number.isNaN(precio) || precio < 0) {
+                await sock.sendMessage(from, { text: "❌ Precio inválido." });
+                return;
+            }
+            await saveCombo(nombre, plataformas, precio);
+            await sock.sendMessage(from, { text: `✅ Combo *${nombre}* creado.\n📦 Plataformas: ${plataformas.join(", ")}\n💰 Precio: ${precio} créditos` });
+            return;
+        }
+
+        if (text.startsWith(".combodel ")) {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const nombre = rawText.split(/\s+/)[1]?.toLowerCase();
+            if (!nombre) {
+                await sock.sendMessage(from, { text: "❌ Uso:\n.combodel quesogratis" });
+                return;
+            }
+            const combos = await loadCombos();
+            if (!combos[nombre]) {
+                await sock.sendMessage(from, { text: `❌ El combo *${nombre}* no existe.` });
+                return;
+            }
+            await deleteCombo(nombre);
+            await sock.sendMessage(from, { text: `🗑️ Combo *${nombre}* eliminado.` });
+            return;
+        }
+
+        if (text === ".combosver") {
+            if (!await isAdmin(sock, from, lidJid, senderJid)) {
+                await sock.sendMessage(from, { text: "⛔ Solo administradores." });
+                return;
+            }
+            const combos = await loadCombos();
+            const stock = await loadStock();
+            await sock.sendMessage(from, { text: listCombosText(combos, stock) });
+            return;
+        }
+
+        // ==============================
         // CLIENTES
         // ==============================
         if (text === ".creditos") {
@@ -727,10 +837,73 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             return;
         }
 
+        if (text === ".combos") {
+            const combos = await loadCombos();
+            const stock = await loadStock();
+            await sock.sendMessage(from, { text: listCombosText(combos, stock) });
+            return;
+        }
+
         if (text.startsWith(".comprar ")) {
             const parts = rawText.split(/\s+/);
+            if (parts.length < 2) {
+                await sock.sendMessage(from, { text: "❌ Uso:\n.comprar netflix perfil\n.comprar nombrecombo" });
+                return;
+            }
+
+            const userKey = getUserKey(senderJid);
+            const user = await getOrCreateUser(userKey);
+            const posibleCombo = parts[1].toLowerCase();
+            const combos = await loadCombos();
+
+            if (combos[posibleCombo]) {
+                const combo = combos[posibleCombo];
+                const stock = await loadStock();
+                const precio = Number(combo.precio);
+                const sinStock = combo.plataformas.filter(p => (stock[p]?.perfil?.length ?? 0) === 0);
+                if (sinStock.length > 0) {
+                    await sock.sendMessage(from, { text: `❌ Sin stock en: *${sinStock.join(", ")}*\nIntenta más tarde.` });
+                    return;
+                }
+                if (user.creditos < precio) {
+                    await sock.sendMessage(from, { text: `❌ No tienes créditos suficientes.\n💳 Precio del combo: *${precio}*\n💰 Tu saldo: *${user.creditos}*` });
+                    return;
+                }
+                const cuentasEntregadas = [];
+                for (const plataforma of combo.plataformas) {
+                    const cuenta = stock[plataforma].perfil.shift();
+                    await saveStock(plataforma, stock[plataforma]);
+                    cuentasEntregadas.push({ plataforma, cuenta });
+                }
+                user.creditos -= precio;
+                user.compras += 1;
+                await saveUser(user);
+                await saveSale({ usuario: userKey, telefono: jidToPhone(userKey), producto: posibleCombo, tipo: "combo", precio, cuenta: cuentasEntregadas.map(c => `${c.plataforma}:${c.cuenta}`).join("|") });
+
+                const fecha = new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
+                let mensajeCombo = `🎁 *COMBO: ${posibleCombo.toUpperCase()}* 🎁\n\n📅 *Fecha de compra:* ${fecha}\n\n`;
+                for (const { plataforma, cuenta } of cuentasEntregadas) {
+                    const partes = cuenta.split(":");
+                    const correo = partes[0] || "";
+                    const contrasena = partes[1] || "";
+                    const perfil = partes[2] || "";
+                    mensajeCombo += `${getEmoji(plataforma)} *${plataforma.toUpperCase()}*\n${correo}\n🔒 ${contrasena}${perfil ? `\n👤 ${perfil}` : ""}\n\n`;
+                }
+                mensajeCombo += `*INSTRUCCIONES* ‼️\n\n🌙 El servicio solo es para *1 SOLO DISPOSITIVO*.\n⭐ *NO* cambiar datos, contraseña o correo.\n🌙 No mover absolutamente nada de la suscripción.\n⭐ *Fallas y Reposiciones de 1 a 4 días* 🌙\n\n⭐ *Gracias por tu compra* ⭐`;
+
+                try {
+                    await sock.sendMessage(userKey, { text: mensajeCombo }).catch(() => {});
+                    const sin1 = userKey.replace("521", "52");
+                    if (sin1 !== userKey) await sock.sendMessage(sin1, { text: mensajeCombo }).catch(() => {});
+                    await sock.sendMessage(from, { text: `✅ *Combo adquirido correctamente*\n\n🎁 ${posibleCombo.toUpperCase()}\n💳 Se descontaron *${precio} créditos*\n📩 Te envié los accesos por privado.` });
+                } catch {
+                    await sock.sendMessage(from, { text: "⚠️ Compra procesada pero no pude enviar el privado. Escribe al admin." });
+                }
+                return;
+            }
+
             if (parts.length < 3) {
-                await sock.sendMessage(from, { text: "❌ Uso:\n.comprar netflix perfil" });
+                await sock.sendMessage(from, { text: "❌ Uso:\n.comprar netflix perfil\n.comprar nombrecombo" });
                 return;
             }
 
@@ -754,8 +927,6 @@ Por aquí no puedo brindarte atención personalizada, pero con gusto puedes pedi
             }
 
             const precio = Number(products[producto][tipo].precio ?? 0);
-            const userKey = getUserKey(senderJid);
-            const user = await getOrCreateUser(userKey);
 
             if (user.creditos < precio) {
                 await sock.sendMessage(from, {
